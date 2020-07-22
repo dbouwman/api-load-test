@@ -1,0 +1,19 @@
+{
+  "name": "api-load-test",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@esri/arcgis-rest-auth": "^2.13.1",
+    "@esri/arcgis-rest-portal": "^2.13.1",
+    "@esri/arcgis-rest-request": "^2.13.1",
+    "cross-fetch": "^3.0.4",
+    "dotenv": "^8.2.0",
+    "isomorphic-form-data": "^2.0.0"
+  }
+}
