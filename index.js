@@ -54,7 +54,7 @@ return createHostItem(session)
 
 
 function getFiles () {
-  return fs.readdirSync(path.join(__dirname, 'resources-big'));
+  return fs.readdirSync(path.join(__dirname, 'resources'));
 }
 
 function replaceThumbnail(itemId, authentication) {
@@ -103,7 +103,7 @@ function uploadFile(itemId, filename, session) {
   let opt = {
     itemId,
     filename,
-    filedata: fs.createReadStream(`./resources-big/${filename}`)
+    filedata: fs.createReadStream(`./resources/${filename}`)
   };
   console.info(`...opt created`);
   return uploadResource(opt, session);
@@ -115,7 +115,7 @@ function uploadFiles (files, itemId, authentication) {
     return {
       itemId,
       filename,
-      filedata: fs.createReadStream(`./resources-big/${filename}`)
+      filedata: fs.createReadStream(`./resources/${filename}`)
     }
   });
   // partially apply auth and a catch
