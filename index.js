@@ -3,6 +3,7 @@ require('dotenv').config()
 // ensures fetch is available as a global
 require("cross-fetch/polyfill");
 require("isomorphic-form-data");
+const {batch, uploadResourcesFromUrl} = require('@esri/hub-common');
 
 const path = require('path');
 const fs = require('fs');
@@ -53,7 +54,7 @@ return createHostItem(session)
 
 
 function getFiles () {
-  return fs.readdirSync(path.join(__dirname, 'resources'));
+  return fs.readdirSync(path.join(__dirname, 'resources-big'));
 }
 
 function replaceThumbnail(itemId, authentication) {
@@ -102,7 +103,7 @@ function uploadFile(itemId, filename, session) {
   let opt = {
     itemId,
     filename,
-    filedata: fs.createReadStream(`./resources/${filename}`)
+    filedata: fs.createReadStream(`./resources-big/${filename}`)
   };
   console.info(`...opt created`);
   return uploadResource(opt, session);
@@ -114,17 +115,29 @@ function uploadFiles (files, itemId, authentication) {
     return {
       itemId,
       filename,
-      filedata: fs.createReadStream(`./resources/${filename}`)
+      filedata: fs.createReadStream(`./resources-big/${filename}`)
     }
   });
-  return Promise.all(fileOpts.map((opt) => {
-    return uploadResource(opt, authentication);
-  }))
+  // partially apply auth and a catch
+  const uploadWithAuth = (opts) => {
+    return uploadResource(opts, authentication)
+    .catch(e => {
+      console.error(`Error uploading resource ${opts.filename} :: ${e.message}`);
+      return {success: false};
+    });
+  };
+  return batch(fileOpts, uploadWithAuth, 5)
+  // return Promise.all(fileOpts.map((opt) => {
+  //   return uploadResource(opt, authentication);
+  // }))
   .then((resps) => {
     console.log(`Uploads complete.`);
     resps.forEach((r) => {
       console.log(`   API Response from /addResource: ${r.success}`);
     });
+  })
+  .catch((err) => {
+    console.error(`Caught error: ${err.message}`);
   })
 
 }
@@ -150,7 +163,8 @@ function uploadResource(imgOpts, authentication) {
     return resp;
   })
   .catch(ex => {
-    console.error(`Error adding ${imgOpts.filename} to item ${imgOpts.itemId} :: `, ex);
+    console.log(`Error adding ${imgOpts.filename} to item ${imgOpts.itemId} ::${ex.message} `);
+    return {success: false};
   })
 }
 
