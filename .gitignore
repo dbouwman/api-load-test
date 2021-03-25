@@ -1,6 +1,10 @@
 .DS_Store
 .env
 node_modules
-resources/*.zip
-resources/*.JPG
-resources/*.jpg
+resources/*.*
+!resources/add-files-here.txt
+
+# Local notes
+__*.*
+__*
+
