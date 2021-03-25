@@ -9,7 +9,7 @@
   <label for="password">password:&nbsp;</label><input type="password" id="password">
   <label for="portal">portal:&nbsp;</label><input type="text" id="portal" style="width:256px" placeholder="https://www.arcgis.com">
   <br /><br />
-  buffer size: <input type="text" id="bufferSize" placeholder="10" maxlength="2" size="2" />
+  batch size: <input type="text" id="batchSize" placeholder="10" maxlength="2" size="2" />
   <br><br>
   <input type="file" id="files" name="files[]" multiple />
   <br><br>
@@ -35,11 +35,11 @@
             password: document.getElementById("password").value,
             portal: (document.getElementById("portal").value || "https://www.arcgis.com") + "/sharing/rest"
           });
-          var bufferSize = document.getElementById('bufferSize').value || 10;
+          var batchSize = document.getElementById('batchSize').value || 10;
           var files = evt.target.files; // FileList object
 
           let createdItemId = ''
-          return createHostItem(session, bufferSize)
+          return createHostItem(session, batchSize)
           .then((id) => {
             createdItemId = id;
             return uploadFiles(files, createdItemId, session);
@@ -55,11 +55,11 @@
           });
         }
 
-        function createHostItem(session, bufferSize) {
+        function createHostItem(session, batchSize) {
           return portal.createItem({
             item: {
               type: 'Web Mapping Application',
-              title: `Resource Upload Test - x${bufferSize}`,
+              title: `Resource Upload Test - x${batchSize}`,
               tags: ['test'],
               typeKeywords: ['resourceTest']
             },
@@ -90,7 +90,7 @@
               return {success: false};
             });
           };
-          return hubCommon.batch(fileOpts, uploadWithAuth, bufferSize)
+          return hubCommon.batch(fileOpts, uploadWithAuth, batchSize)
           .then((resps) => {
             console.log(`Uploads complete.`);
             resps.forEach((r) => {
