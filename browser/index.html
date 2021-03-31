@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+  <!-- Latest compiled and minified CSS -->
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css"
+    integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
+</head>
+<body>
+  <div class="container">
+    <div class="col-sm-12">
+      <h2>Item Resource Upload Issues</h2>
+      <p>The Solutions and Hub Teams are seeing issues when uploading large numbers of files as resources on items. While the API almost always returns <code>200:OK {success:true}</code>
+      when we check the resources reported back by the item, often many of the resources that were "successfully uploaded" are not actually present.</p>
+      <p>Our investigations suggest the issue is most prevalent when upload large numbers of small text or json resources.</p>
+      <hr>
+      </div>
+      <div class="col-sm-6">
+        <h3>Credentials:</h3>
+        <form>
+          <div class="form-group">
+            <label for="username">username:&nbsp;</label>
+            <input type="text" id="username" class="form-control">
+          </div>
+          <div class="form-group">
+            <label for="password">password:&nbsp;</label>
+            <input type="password" id="password" class="form-control">
+          </div>
+          <div class="form-group">
+            <label for="portal">portal:&nbsp;</label>
+            <input type="text" id="portal" placeholder="https://www.arcgis.com" class="form-control">
+          </div>
+        </form>
+        <hr>
+        <button class="btn btn-primary" id="btnVerify">Verify Credentials</button>
+        <output>
+          <pre id="credVerification"></pre>
+        </output>
+      </div>
+      <div class="col-sm-6">
+        <h3>Configure Test:</h3>
+        <form>
+          <div class="form-group">
+            <label for="bufferSize">Batch Size</label>
+            <input type="text" id="bufferSize" placeholder="10" maxlength="2"class="form-control"/>
+          </div>
+          <div class="form-group">
+            <label for="lag">Forced Lag (ms)</label>
+            <input type="text" id="lag" placeholder="0" maxlength="5" class="form-control" value="0"/>
+          </div>
+          <div class="form-group">
+            <label for="lag">Files</label>
+            <input type="file" id="files" name="files[]" multiple/>
+          </div>
+        </form>
+        <button class="btn btn-primary" id="btnUpload">Start Test</button>
+        <hr>
+      </div>
+      <div class="col-sm-12">
+        <h3>Output:</h3>
+        <ul id="log">
+
+        </ul>
+      </div>
+      
+    </div>
+  </div>
+  
+
+  <script src="https://requirejs.org/docs/release/2.3.6/minified/require.js"></script>
+  <script>
+    require.config({
+      paths: {
+        "@esri/arcgis-rest-auth": "https://unpkg.com/@esri/arcgis-rest-auth@3.0.4/dist/umd/auth.umd.min",
+        "@esri/arcgis-rest-portal": "https://unpkg.com/@esri/arcgis-rest-portal@3.0.4/dist/umd/portal.umd.min",
+        "@esri/arcgis-rest-request": "https://unpkg.com/@esri/arcgis-rest-request@3.0.4/dist/umd/request.umd.min",
+        "@esri/hub-common": "https://unpkg.com/@esri/hub-common@6.0.1/dist/umd/common.umd.min"
+      }
+    });
+
+    var files;
+    require(["@esri/arcgis-rest-auth", "@esri/arcgis-rest-portal", "@esri/hub-common"],
+      
+      function (auth, portal, hubCommon) {
+
+        function startUpload(evt) {
+          clearLog();
+          var opts = {
+            username: document.getElementById("username").value,
+            password: document.getElementById("password").value,
+            portal: (document.getElementById("portal").value || "https://www.arcgis.com") + "/sharing/rest"
+          };
+          var session = new auth.UserSession(opts);
+          var bufferSize = parseInt(document.getElementById('bufferSize').value || 10);
+          var files = document.getElementById('files').files;
+          var lag = parseInt(document.getElementById('lag').value || 0);
+          let createdItemId = ''
+
+          return createHostItem(session, bufferSize)
+            .then((id) => {
+              createdItemId = id;
+              logAction(`Created item ${id} for storage...`);
+              return uploadFiles(files, createdItemId, session, bufferSize, lag);
+            })
+            .then(() => {
+              logAction(`Uploads complete. Fetching resources from item ${createdItemId}...`);
+              return portal.getItemResources(createdItemId, { authentication: session });
+            })
+            .then((response) => {
+              // now compare this to the filenames
+              logAction(`AGO Reports the item has ${response.resources.length} resources, and we uploaded ${files.length} resources`);
+            })
+            .catch(ex => {
+              logAction(`Error occured ${ex.message}`);
+            })
+        }
+
+        function logAction(msg) {
+          console.log(msg);
+          const li = document.createElement('li');
+          li.textContent = msg;
+          document.querySelector('#log').appendChild(li);
+        }
+
+        function clearLog() {
+          document.querySelector('#log').innerHTML = '';
+        }
+
+        function createHostItem(session, bufferSize, lag) {
+          return portal.createItem({
+            item: {
+              type: 'Web Mapping Application',
+              title: `Resource Upload Test - x${bufferSize}`,
+              tags: ['test'],
+              typeKeywords: ['resourceTest']
+            },
+            authentication: session
+          })
+          .then((resp) => {
+            console.log(`Created Host Item ${resp.id}`);
+            return resp.id;
+          })
+          .catch((ex) => {
+            logAction(`Error creating host item: ${ex.message}`);
+            throw ex;
+          })
+        }
+
+        function uploadFiles (files, itemId, authentication, bufferSize, lag) {
+          const fileOpts = Array.from(files).map((file) => {
+            return {
+              itemId,
+              filename: file.name,
+              filedata: file
+            }
+          });
+          // partially apply auth and a catch
+          const uploadWithAuth = (opts) => {
+            return uploadResource(opts, authentication)
+            .then((response) => {
+              logAction(`Upload of file ${opts.filename} returned success: ${JSON.stringify(response.success)}. Starting ${lag}ms delay before continuing`);
+              if (lag) {
+                return returnLater(lag, response);
+              } else {
+                return response;
+              }
+              
+            })
+            .catch(e => {
+              logAction(`Error uploading resource ${opts.filename} :: ${e.message}`);
+              return {success: false};
+            });
+          };
+          return hubCommon.batch(fileOpts, uploadWithAuth, bufferSize)
+        }
+
+        function uploadResource(imgOpts, authentication) {
+          console.log(`uploadResource ${imgOpts.filename} to ${imgOpts.itemId}`);
+          return portal.addItemResource({
+            authentication,
+            resource: imgOpts.filedata,
+            name: imgOpts.filename,
+            id: imgOpts.itemId,
+            params: {
+              method: 'POST'
+            }
+          })
+          .then((resp) => {
+            console.log(`Added ${imgOpts.filename} to item ${imgOpts.itemId}`);
+            return resp;
+          })
+          .catch(ex => {
+            console.log(`Error adding ${imgOpts.filename} to item ${imgOpts.itemId} ::${ex.message} `);
+            return {success: false};
+          })
+        }
+
+        function verifyCredentials() {
+          var opts = {
+            username: document.getElementById("username").value,
+            password: document.getElementById("password").value,
+            portal: (document.getElementById("portal").value || "https://www.arcgis.com") + "/sharing/rest"
+          };
+          var session = new auth.UserSession(opts);
+          return session.getToken(opts.portal)
+          .then((result) => {
+            document.getElementById('credVerification').innerText= 'Creds Verified';
+          })
+          .catch((err) => {
+            document.getElementById('credVerification').innerText = `Invalid Creds ${err}`;
+          })
+        }
+
+        function returnLater(delay, value) {
+          return new Promise(resolve => setTimeout(resolve, delay, value));
+        }
+
+        document.getElementById('btnVerify').addEventListener('click', verifyCredentials, false);
+        document.getElementById('btnUpload').addEventListener('click', startUpload, false);
+      }
+    );
+  </script>
+</body>
+</html>
