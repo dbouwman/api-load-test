@@ -62,10 +62,10 @@
 
         </ul>
       </div>
-      
+
     </div>
   </div>
-  
+
 
   <script src="https://requirejs.org/docs/release/2.3.6/minified/require.js"></script>
   <script>
@@ -80,10 +80,14 @@
 
     var files;
     require(["@esri/arcgis-rest-auth", "@esri/arcgis-rest-portal", "@esri/hub-common"],
-      
+
       function (auth, portal, hubCommon) {
+        let numSuccessfulUploads = 0;
+        let numFailureUploads = 0;
 
         function startUpload(evt) {
+          numSuccessfulUploads = 0;
+          numFailureUploads = 0;
           clearLog();
           var opts = {
             username: document.getElementById("username").value,
@@ -103,21 +107,29 @@
               return uploadFiles(files, createdItemId, session, bufferSize, lag);
             })
             .then(() => {
-              logAction(`Uploads complete. Fetching resources from item ${createdItemId}...`);
+              logAction(`Uploads complete: ${numSuccessfulUploads} uploads report success; ${numFailureUploads} uploads report failure`);
+              logAction(`Fetching resources from item ${createdItemId}...`);
               return portal.getItemResources(createdItemId, { authentication: session });
             })
             .then((response) => {
               // now compare this to the filenames
-              logAction(`AGO Reports the item has ${response.resources.length} resources, and we uploaded ${files.length} resources`);
+              if (numSuccessfulUploads === response.resources.length) {
+                logAction(`AGO Reports the item has ${response.resources.length} resources`, 'green');
+              } else {
+                logAction(`AGO Reports the item has ${response.resources.length} resources`, 'red');
+              }
             })
             .catch(ex => {
               logAction(`Error occured ${ex.message}`);
             })
         }
 
-        function logAction(msg) {
+        function logAction(msg, color) {
           console.log(msg);
           const li = document.createElement('li');
+          if (color) {
+            li.style.color = color;
+          }
           li.textContent = msg;
           document.querySelector('#log').appendChild(li);
         }
@@ -147,50 +159,67 @@
         }
 
         function uploadFiles (files, itemId, authentication, bufferSize, lag) {
-          const fileOpts = Array.from(files).map((file) => {
-            return {
-              itemId,
-              filename: file.name,
-              filedata: file
-            }
-          });
-          // partially apply auth and a catch
-          const uploadWithAuth = (opts) => {
-            return uploadResource(opts, authentication)
-            .then((response) => {
-              logAction(`Upload of file ${opts.filename} returned success: ${JSON.stringify(response.success)}. Starting ${lag}ms delay before continuing`);
-              if (lag) {
-                return returnLater(lag, response);
-              } else {
-                return response;
-              }
-              
-            })
-            .catch(e => {
-              logAction(`Error uploading resource ${opts.filename} :: ${e.message}`);
-              return {success: false};
+          // load selected files into browser
+          const addOptsDefs = Array.from(files)
+          .map((file) => {
+            return new Promise(resolve => {
+              var reader = new FileReader();
+
+              // Closure to capture the file information.
+              reader.onload = (function(theFile) {
+                return function(e) {
+                  resolve({
+                    authentication,
+                    resource: new File([e.target.result], file.name),
+                    name: file.name,
+                    id: itemId,
+                    params: {
+                      method: 'POST'
+                    }
+                  });
+                };
+              })(file);
+
+              reader.readAsArrayBuffer(file);
             });
-          };
-          return hubCommon.batch(fileOpts, uploadWithAuth, bufferSize)
+          });
+
+          return Promise.all(addOptsDefs)
+          .then(
+            addOpts => {
+              // partially apply auth and a catch
+              const uploadWithAuth = (opts) => {
+                return uploadResource(opts, authentication)
+                .then((response) => {
+                  ++numSuccessfulUploads;
+                  //logAction(`Upload of file ${opts.name} returned success: ${JSON.stringify(response.success)}. Starting ${lag}ms delay before continuing`);
+                  if (lag) {
+                    return returnLater(lag, response);
+                  } else {
+                    return response;
+                  }
+
+                })
+                .catch(e => {
+                  ++numFailureUploads;
+                  //logAction(`Error uploading resource ${opts.name} :: ${e.message}`);
+                  return {success: false};
+                });
+              };
+              return hubCommon.batch(addOpts, uploadWithAuth, bufferSize)
+            }
+          );
         }
 
-        function uploadResource(imgOpts, authentication) {
-          console.log(`uploadResource ${imgOpts.filename} to ${imgOpts.itemId}`);
-          return portal.addItemResource({
-            authentication,
-            resource: imgOpts.filedata,
-            name: imgOpts.filename,
-            id: imgOpts.itemId,
-            params: {
-              method: 'POST'
-            }
-          })
+        function uploadResource(addOpts, authentication) {
+          console.log(`uploadResource ${addOpts.name} to ${addOpts.id}`);
+          return portal.addItemResource(addOpts)
           .then((resp) => {
-            console.log(`Added ${imgOpts.filename} to item ${imgOpts.itemId}`);
+            console.log(`Added ${addOpts.name} to item ${addOpts.id}`);
             return resp;
           })
           .catch(ex => {
-            console.log(`Error adding ${imgOpts.filename} to item ${imgOpts.itemId} ::${ex.message} `);
+            console.log(`Error adding ${addOpts.name} to item ${addOpts.id} ::${ex.message} `);
             return {success: false};
           })
         }
