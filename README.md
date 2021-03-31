@@ -4,11 +4,10 @@ To run things, clone the repo locally, and run `npm install` in the root.
 
 ## Browser Resource Upload Test
 
-1. run `npm run browser`
-2. open https://item-resources.surge.sh in a browser
-3. enter username, password and portal base url (optionally click Verify Credentials to ensure no typos)
-4. Click "Choose Files" and select a large number of files. If you've cloned the repo, use the files in the `small-resources` folder.
-5. Click Start Test. You'll see messages in the Output area
+1. open https://solutionstest.esri.com/api-load-test/browser/ in a browser
+2. enter username, password and portal base url (optionally click Verify Credentials to ensure no typos)
+3. Click "Choose Files" and select a large number of files. If you've cloned the repo, use the files in the `small-resources` folder.
+4. Click Start Test. You'll see messages in the Output area
 
 If you want to run this locally, you have to open the /browse/index.html file in a browser.
 
