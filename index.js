@@ -1,4 +1,4 @@
-// load config (username/password/portalurl)
+// load config (username/password/portalurl/buffersize)
 require('dotenv').config()
 // ensures fetch is available as a global
 require("cross-fetch/polyfill");
@@ -13,9 +13,15 @@ const { createItem, addItemResource, updateItem, getItemResources } = require('@
 
 
 
-const username = process.env.USERNAME;
+const username = process.env.AGOUSERNAME; // on Windows, process.env.USERNAME is fixed as the Windows logon name
 const password = process.env.PASSWORD;
-const portal = process.env.PORTAL
+const portal = process.env.PORTAL;
+
+let bufferSize = parseInt(process.env.BUFFERSIZE);
+if (process.argv.length >= 3) {
+  bufferSize = process.argv[2];
+}
+console.log(`Using buffer size ${bufferSize}`);
 
 // create a session
 const session = new UserSession({
@@ -26,7 +32,7 @@ const session = new UserSession({
 
 let createdItemId = ''
 let files = [];
-return createHostItem(session)
+return createHostItem(session, bufferSize)
 .then((id) => {
   createdItemId = id;
   return replaceThumbnail(id, session);
@@ -48,7 +54,7 @@ return createHostItem(session)
     } else {
       console.log(`File: ${f} was found in resources`);
     }
-  })
+  });
 
 });
 
@@ -75,11 +81,11 @@ function replaceThumbnail(itemId, authentication) {
   })
 }
 
-function createHostItem(session) {
+function createHostItem(session, bufferSize) {
   return createItem({
     item: {
       type: 'Web Mapping Application',
-      title: 'Resource Upload Test',
+      title: `Resource Upload Test - ${bufferSize}`,
       owner: username,
       tags: ['test'],
       typeKeywords: ['resourceTest']
@@ -126,7 +132,7 @@ function uploadFiles (files, itemId, authentication) {
       return {success: false};
     });
   };
-  return batch(fileOpts, uploadWithAuth, 5)
+  return batch(fileOpts, uploadWithAuth, bufferSize)
   // return Promise.all(fileOpts.map((opt) => {
   //   return uploadResource(opt, authentication);
   // }))
@@ -144,8 +150,8 @@ function uploadFiles (files, itemId, authentication) {
 
 /**
  * Upload a single resource to a file
- * @param {object} imgOpts 
- * @param {*} authentication 
+ * @param {object} imgOpts
+ * @param {*} authentication
  */
 function uploadResource(imgOpts, authentication) {
   console.log(`uploadResource ${imgOpts.filename} to ${imgOpts.itemId}`);

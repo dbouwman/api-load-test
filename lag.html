@@ -9,10 +9,10 @@
   <label for="password">password:&nbsp;</label><input type="password" id="password">
   <label for="portal">portal:&nbsp;</label><input type="text" id="portal" style="width:256px" placeholder="https://www.arcgis.com">
   <br /><br />
-  buffer size: <input type="text" id="bufferSize" placeholder="10" maxlength="2" size="2" />
-  <br><br>
+  milliseconds between uploads: <input type="text" id="lagMs" placeholder="500" maxlength="5" size="4" />
+  <br /><br />
   <input type="file" id="files" name="files[]" multiple />
-  <br><br>
+  <br /><br />
   <output id="list"></output>
 
   <script src="https://requirejs.org/docs/release/2.3.6/minified/require.js"></script>
@@ -35,11 +35,12 @@
             password: document.getElementById("password").value,
             portal: (document.getElementById("portal").value || "https://www.arcgis.com") + "/sharing/rest"
           });
-          var bufferSize = document.getElementById('bufferSize').value || 10;
-          var files = evt.target.files; // FileList object
+          var lagMs = numFromElem('lagMs', 500);
+          var files = Array.from(evt.target.files); // FileList object to Array
+          var sourceFileCount = files.length;
 
           let createdItemId = ''
-          return createHostItem(session, bufferSize)
+          return createHostItem(session, lagMs)
           .then((id) => {
             createdItemId = id;
             return uploadFiles(files, createdItemId, session);
@@ -50,16 +51,21 @@
           .then((response) => {
             // now compare this to the filenames
             document.getElementById('list').innerHTML =
-              `Created item ${createdItemId}<br>` +
-              `AGO Reports the item has ${response.resources.length} resources, and we uploaded ${files.length} resources`;
+              `Created item ${createdItemId}<br />` +
+              `AGO Reports the item has ${response.resources.length} resources, and we uploaded ${sourceFileCount} resources`;
           });
         }
 
-        function createHostItem(session, bufferSize) {
+        function numFromElem(elementId, defaultValue) {
+          const parsedValue = parseInt(document.getElementById(elementId).value);
+          return isNaN(parsedValue) ? defaultValue : parsedValue;
+        }
+
+        function createHostItem(session, lagMs) {
           return portal.createItem({
             item: {
               type: 'Web Mapping Application',
-              title: `Resource Upload Test - x${bufferSize}`,
+              title: `Resource Upload Test - ${lagMs}ms`,
               tags: ['test'],
               typeKeywords: ['resourceTest']
             },
@@ -75,31 +81,20 @@
         }
 
         function uploadFiles (files, itemId, authentication) {
-          const fileOpts = Array.from(files).map((file) => {
-            return {
+          if (files.length === 0) {
+            return Promise.resolve(true);
+          } else {
+            const file = files.shift();
+            const fileOpts = {
               itemId,
               filename: file.name,
               filedata: file
-            }
-          });
-          // partially apply auth and a catch
-          const uploadWithAuth = (opts) => {
-            return uploadResource(opts, authentication)
-            .catch(e => {
-              console.error(`Error uploading resource ${opts.filename} :: ${e.message}`);
-              return {success: false};
+            };
+            return uploadResource(fileOpts, authentication)
+            .then(() => {
+              return uploadFiles(files, itemId, authentication);
             });
-          };
-          return hubCommon.batch(fileOpts, uploadWithAuth, bufferSize)
-          .then((resps) => {
-            console.log(`Uploads complete.`);
-            resps.forEach((r) => {
-              console.log(`   API Response from /addResource: ${r.success}`);
-            });
-          })
-          .catch((err) => {
-            console.error(`Caught error: ${err.message}`);
-          })
+          }
         }
 
         function uploadResource(imgOpts, authentication) {
@@ -114,6 +109,9 @@
             }
           })
           .then((resp) => {
+            return _later(1000, resp);
+          })
+          .then((resp) => {
             console.log(`Added ${imgOpts.filename} to item ${imgOpts.itemId}`);
             return resp;
           })
@@ -121,6 +119,10 @@
             console.log(`Error adding ${imgOpts.filename} to item ${imgOpts.itemId} ::${ex.message} `);
             return {success: false};
           })
+        }
+
+        function  _later (delay, value) {
+          return new Promise(resolve => setTimeout(resolve, delay, value));
         }
 
         document.getElementById('files').addEventListener('change', handleFileSelect, false);
