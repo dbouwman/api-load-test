@@ -11,11 +11,23 @@ const fs = require('fs');
 const { UserSession } = require('@esri/arcgis-rest-auth');
 const { createItem, addItemResource, updateItem, getItemResources } = require('@esri/arcgis-rest-portal');
 
-
-
-const username = process.env.USERNAME;
+const username = process.env.AGOUSERNAME;
 const password = process.env.PASSWORD;
 const portal = process.env.PORTAL
+
+const RESOURCEFOLDER = 'small-resources';
+
+// 
+let batchSize = parseInt(process.env.BATCHSIZE);
+if (process.argv.length >= 3) {
+  batchSize = process.argv[2];
+}
+// Lag between batches
+let lag = 0;
+if (process.argv.length >= 4) {
+  lag = process.argv[3];
+}
+console.log(`Using Batch size ${batchSize} and Lag of ${lag}`);
 
 // create a session
 const session = new UserSession({
@@ -26,27 +38,30 @@ const session = new UserSession({
 
 let createdItemId = ''
 let files = [];
-return createHostItem(session)
+// Create a new item to hold the resources
+return createHostItem(session, batchSize)
 .then((id) => {
   createdItemId = id;
+  // give it a thumbnail
   return replaceThumbnail(id, session);
 })
 .then(() => {
+  // get the files from the resources folder, and upload them as resources
   files = getFiles();
-  return uploadFiles(files, createdItemId, session);
+  return uploadFiles(files, createdItemId, session, batchSize, lag);
 })
 .then(() => {
+  // ask the API for it's list of resources...
   return getItemResources(createdItemId, {authentication: session});
 })
 .then((response) => {
-  // now compare this to the files
+  // compare the item's resources to the files we originally uploaded
   console.log(`AGO Reports the item has ${response.resources.length} resources, and we uploaded ${files.length} resources`);
+  console.log('--------------- Missing Files --------------')
   const resources = response.resources.map(r => r.resource);
   files.forEach(f => {
     if (resources.indexOf(f) === -1) {
       console.log(`Error: File: ${f} was not found in resources`);
-    } else {
-      console.log(`File: ${f} was found in resources`);
     }
   })
 
@@ -54,7 +69,7 @@ return createHostItem(session)
 
 
 function getFiles () {
-  return fs.readdirSync(path.join(__dirname, 'resources'));
+  return fs.readdirSync(path.join(__dirname, RESOURCEFOLDER));
 }
 
 function replaceThumbnail(itemId, authentication) {
@@ -75,11 +90,11 @@ function replaceThumbnail(itemId, authentication) {
   })
 }
 
-function createHostItem(session) {
+function createHostItem(session, batchSize) {
   return createItem({
     item: {
       type: 'Web Mapping Application',
-      title: 'Resource Upload Test',
+      title: `Resource Upload Test - x${batchSize}`,
       owner: username,
       tags: ['test'],
       typeKeywords: ['resourceTest']
@@ -103,43 +118,50 @@ function uploadFile(itemId, filename, session) {
   let opt = {
     itemId,
     filename,
-    filedata: fs.createReadStream(`./resources/${filename}`)
+    filedata: fs.createReadStream(`./${RESOURCEFOLDER}/${filename}`)
   };
   console.info(`...opt created`);
   return uploadResource(opt, session);
 }
 
-
-function uploadFiles (files, itemId, authentication) {
+/**
+ * Given a set of files, upload the all to
+ * the specified item
+ * @param {*} files 
+ * @param {*} itemId 
+ * @param {*} authentication 
+ * @returns 
+ */
+function uploadFiles (files, itemId, authentication, batchSize, lag) {
   const fileOpts = files.map((filename) => {
     return {
       itemId,
       filename,
-      filedata: fs.createReadStream(`./resources/${filename}`)
+      filedata: fs.createReadStream(`./${RESOURCEFOLDER}/${filename}`)
     }
   });
   // partially apply auth and a catch
   const uploadWithAuth = (opts) => {
-    return uploadResource(opts, authentication)
+  return uploadResource(opts, authentication)
+    .then((response) => {
+      console.log(`Upload of file ${opts.filename} returned success: ${JSON.stringify(response.success)}. Starting ${lag}ms delay before continuing`);
+      if (lag) {
+        return returnLater(lag, response);
+      } else {
+        return response;
+      }
+      
+    })
     .catch(e => {
-      console.error(`Error uploading resource ${opts.filename} :: ${e.message}`);
+      console.log(`Error uploading resource ${opts.filename} :: ${e.message}`);
       return {success: false};
     });
   };
-  return batch(fileOpts, uploadWithAuth, 5)
-  // return Promise.all(fileOpts.map((opt) => {
-  //   return uploadResource(opt, authentication);
-  // }))
-  .then((resps) => {
-    console.log(`Uploads complete.`);
-    resps.forEach((r) => {
-      console.log(`   API Response from /addResource: ${r.success}`);
-    });
-  })
-  .catch((err) => {
-    console.error(`Caught error: ${err.message}`);
-  })
+  return batch(fileOpts, uploadWithAuth, batchSize);
+}
 
+function returnLater(delay, value) {
+  return new Promise(resolve => setTimeout(resolve, delay, value));
 }
 
 /**
@@ -148,7 +170,7 @@ function uploadFiles (files, itemId, authentication) {
  * @param {*} authentication 
  */
 function uploadResource(imgOpts, authentication) {
-  console.log(`uploadResource ${imgOpts.filename} to ${imgOpts.itemId}`);
+  // console.log(`uploadResource ${imgOpts.filename} to ${imgOpts.itemId}`);
   return addItemResource({
     authentication,
     resource: imgOpts.filedata,
