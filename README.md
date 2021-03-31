@@ -1,6 +1,4 @@
-# Portal API Test Harness
-
-This repo is a hack project for ad-hoc portal api load testing
+# Item Resource Test Harness
 
 To run things, clone the repo locally, and run `npm install` in the root.
 
